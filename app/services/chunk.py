@@ -25,7 +25,8 @@ class ChunkService:
             )
 
             chunk_model = [
-                Chunk(text = chunk["text"],
+                Chunk( video_id = transcript.video_id,
+                text = chunk["text"],
                 start = chunk["start"],
                 end = chunk["end"]
                 ) for chunk in chunks
