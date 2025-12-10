@@ -1,8 +1,6 @@
-# app/services/vector_db.py
-
 import os
-from typing import List, Dict, Any
-from pinecone import Pinecone, Index
+from typing import List, Dict, Any, Union
+from pinecone import Pinecone 
 from itertools import islice
 from fastapi import HTTPException
 
@@ -10,27 +8,26 @@ from fastapi import HTTPException
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 PINECONE_HOST = os.environ.get("PINECONE_HOST") 
 COLLECTION_NAME = os.environ.get("PINECONE_INDEX_NAME")
-BATCH_SIZE = 100
+BATCH_SIZE = 100 
 
 # --- Singleton Class for the DB Connection ---
 class VectorDBService:
     """
     A service class to abstract all interactions with the Pinecone vector store.
     """
-    def __init__(self, index: Index):
+    def __init__(self, index: "Index"): 
         self.index = index
         self.namespace = "default"
 
-    def ingest_documents(self, documents: List[Dict[str, Any]]) -> int:
+    def ingest_documents(self, documents: List[Dict[str, Any]]) -> Dict[str, Union[str, int]]:
         """
-        Takes processed documents (with 'text', 'vector', and metadata) and
-        performs a batched upsert into the Pinecone index.
+        Takes processed documents and performs a batched upsert into the Pinecone index, 
+        returning status and count.
         """
         vectors_to_upsert = []
         
         # Format documents for Pinecone upsert
         for i, doc in enumerate(documents):
-            # Create a unique ID (e.g., combining video_id and chunk index)
             chunk_id = f"{doc['video_id']}-{i}"
             
             metadata = {
@@ -42,7 +39,7 @@ class VectorDBService:
             
             vectors_to_upsert.append({
                 "id": chunk_id,
-                "values": doc['vector'],
+                "values": doc['vector'], 
                 "metadata": metadata
             })
             
@@ -58,7 +55,7 @@ class VectorDBService:
                 yield chunk
 
         # 2. Perform batched upsert
-        for batch in batch_iterator(vectors_to_upsert, BATCH_SIZE):
+        for batch in batch_iterator(vectors_to_upsert, BATCH_SIZE): 
             try:
                 self.index.upsert(
                     vectors=batch, 
@@ -66,11 +63,13 @@ class VectorDBService:
                 )
                 total_count += len(batch)
             except Exception as e:
-                # Log the error and re-raise it as an HTTPException
                 print(f"Pinecone Upsert Error: {e}")
                 raise HTTPException(status_code=500, detail=f"Pinecone upsert failed: {str(e)}")
 
-        return total_count
+        return {
+            "status": "success",
+            "total_count": total_count
+        }
 
     def query_documents(self, query_vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
         """
@@ -89,7 +88,7 @@ class VectorDBService:
             raise HTTPException(status_code=500, detail=f"Pinecone query failed: {str(e)}")
 
         retrieved_documents = []
-        
+
         # 3. Structure the results for the RAG pipeline
         for match in results.matches:
             # Extract the stored text and other metadata
@@ -103,10 +102,9 @@ class VectorDBService:
         return retrieved_documents
 
 
-# --- Factory Function for FastAPI Dependency Injection ---
+# --- Factory Function for FastAPI Dependency Injection (Requires Index type hint) ---
 
-# Global variable to hold the single instance of the service (Singleton)
-_db_service_instance: VectorDBService = None
+_db_service_instance: "VectorDBService" = None
 
 def get_vector_db_service() -> VectorDBService:
     """
@@ -117,24 +115,21 @@ def get_vector_db_service() -> VectorDBService:
 
     if _db_service_instance is None:
         if not PINECONE_API_KEY or not PINECONE_HOST:
-             # Critical error, stop the application startup
-             raise RuntimeError("PINECONE_API_KEY and PINECONE_HOST environment variables must be set.")
+            raise RuntimeError("PINECONE_API_KEY and PINECONE_HOST environment variables must be set.")
         
         try:
-            # 1. Initialize Pinecone client
+            from pinecone import Pinecone # Ensure Pinecone is accessed here
             pc = Pinecone(api_key=PINECONE_API_KEY)
+
+            index = pc.Index(host=PINECONE_HOST) 
+
             
-            # 2. Connect to the specific index
-            index = pc.Index(host=PINECONE_HOST)
-            
-            # (Optional) Verify connection and index health
-            index_stats = index.describe_index_stats()
+            index_stats = index.describe_index_stats() 
             print(f"Successfully connected to Pinecone Index: {COLLECTION_NAME}. Total vectors: {index_stats.total_vector_count}")
-            
+
             _db_service_instance = VectorDBService(index)
 
         except Exception as e:
-            print(f"Error initializing Pinecone: {e}")
             raise RuntimeError(f"Failed to initialize VectorDBService with Pinecone. Ensure API Key/Host are correct and the index exists. Error: {str(e)}")
             
     return _db_service_instance
