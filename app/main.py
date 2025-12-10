@@ -1,10 +1,12 @@
 from fastapi import FastAPI
-from app.api import transcript, chunk, ingestion
+from app.api import transcript, chunk, ingestion, embedding
 
 app = FastAPI(title="Ask My Youtuber Backend")
 
+
 app.include_router(transcript.router, prefix="/api", tags=["Transcript"])
 app.include_router(chunk.router, prefix="/api", tags=["Chunk"])
+app.include_router(embedding.router, prefix="/api", tags=["Embedding"])
 app.include_router(ingestion.router, prefix="/api", tags=["Ingestion"])
 
 @app.get("/")
