@@ -2,6 +2,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 class Chunk(BaseModel):
+    video_id: str
     text: str
     start: float
     end: float
