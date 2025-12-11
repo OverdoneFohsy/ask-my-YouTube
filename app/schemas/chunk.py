@@ -6,6 +6,7 @@ class Chunk(BaseModel):
     text: str
     start: float
     end: float
+    vector: Optional[List[float]] = None
 
 class ChunkResponse(BaseModel):
     video_id: str
