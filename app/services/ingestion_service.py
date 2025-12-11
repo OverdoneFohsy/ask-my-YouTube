@@ -1,9 +1,9 @@
 from fastapi import Depends
 # from app.services.chunk import ChunkService
-from app.services import transcript_service, chunk, vector_db, embedding_service
+from app.services import chunk_service, transcript_service, vector_db, embedding_service
 
 class IngestionService:
-    def __init__(self, transcript_service: transcript_service.TranscriptService, chunk_service: chunk.ChunkService, embedding_service: embedding_service.EmbeddingService,vector_db_service:vector_db.VectorDBService):
+    def __init__(self, transcript_service: transcript_service.TranscriptService, chunk_service: chunk_service.ChunkService, embedding_service: embedding_service.EmbeddingService,vector_db_service:vector_db.VectorDBService):
         self.transcript_service = transcript_service
         self.chunk_service = chunk_service
         self.embedding_service = embedding_service
@@ -46,7 +46,7 @@ class IngestionService:
 
 def get_ingestion_service(
         transcript_service: transcript_service.TranscriptService = Depends(transcript_service.get_transcript_service),
-        chunk_service: chunk.ChunkService = Depends(chunk.get_chunk_service),
+        chunk_service: chunk_service.ChunkService = Depends(chunk_service.get_chunk_service),
         embedding_service: embedding_service.EmbeddingService = Depends(embedding_service.get_embedding_service),
         vector_db_service: vector_db.VectorDBService = Depends(vector_db.get_vector_db_service)
 ):
