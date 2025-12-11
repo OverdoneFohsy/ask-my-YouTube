@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from app.schemas.transcript import TranscriptResponse
 from app.schemas.chunk import ChunkResponse
-from app.services.chunk import ChunkService, get_chunk_service
+from app.services.chunk_service import ChunkService, get_chunk_service
 
 router = APIRouter(prefix="/chunk", tags=["Chunk"])
 
