@@ -8,6 +8,7 @@ class Snippet(BaseModel):
 
 class TranscriptResponse(BaseModel):
     video_id: str
+    title: str
     language: str
     language_code: str
     is_generated: bool

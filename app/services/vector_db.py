@@ -22,7 +22,7 @@ class VectorDBService:
         self.index = index
         self.namespace = "default"
 
-    def ingest_documents(self, documents: List[Dict[str, Any]]) -> Dict[str, Union[str, int]]:
+    def ingest_documents(self, documents: List[Dict[str, Any]], namespace: str) -> Dict[str, Union[str, int]]:
         """
         Takes processed documents and performs a batched upsert into the Pinecone index, 
         returning status and count.
@@ -31,19 +31,18 @@ class VectorDBService:
         
         # Format documents for Pinecone upsert
         for i, doc in enumerate(documents):
-            chunk_id = f"{doc['video_id']}-{i}"
+            # Generate a unique ID using the source_id (filename or video_id)
+            source_id = doc['metadata'].get("source_id", "unknown")
+            chunk_id = f"{source_id}-{i}"
             
-            metadata = {
-                "text": doc['text'], 
-                "video_id": doc['video_id'],
-                "start": float(doc['start']),
-                "end": float(doc['end'])
-            }
-            
+            # Use the flexible metadata passed from IngestionService
             vectors_to_upsert.append({
                 "id": chunk_id,
                 "values": doc['vector'], 
-                "metadata": metadata
+                "metadata": {
+                    "text": doc['text'],
+                    **doc['metadata']  # Spreads user_id, source_id, source_type, etc.
+                }
             })
             
         total_count = 0
@@ -62,7 +61,7 @@ class VectorDBService:
             try:
                 self.index.upsert(
                     vectors=batch, 
-                    namespace=self.namespace
+                    namespace=namespace
                 )
                 total_count += len(batch)
             except Exception as e:
@@ -74,23 +73,18 @@ class VectorDBService:
             "total_count": total_count
         }
 
-    def query_documents(self, query_vector: List[float], top_k: int = 5, video_id: str = None) -> List[Dict[str, Any]]:
+    def query_documents(self, query_vector: List[float], filter: dict, top_k: int = 5, source_id: str = None, namespace: str = None) -> List[Dict[str, Any]]:
         """
         Performs a similarity search using the query vector to retrieve relevant chunks (Retrieval step).
         """
         try:
-
-            search_filter = {}
-            if video_id:
-                search_filter = {"video_id": {"$eq": video_id}}
-
             results = self.index.query(
                 vector=query_vector,
                 top_k=top_k,
-                filter = search_filter,
+                filter = filter,
                 include_values=False,
                 include_metadata=True,
-                namespace=self.namespace
+                namespace=namespace
             )
             
         except Exception as e:
@@ -111,6 +105,43 @@ class VectorDBService:
             
         return retrieved_documents
 
+    def delete_by_user(self, user_id: str):
+            try:
+                # We target the specific user's namespace
+                namespace = f"user_{user_id}"
+                
+                # Delete all vectors where the 'source' metadata matches
+                self.index.delete(
+                    delete_all=True,
+                    namespace=namespace
+                )
+                return True
+            except Exception as e:
+                print(f"Error deleting from Pinecone: {e}")
+                return False
+    
+    def delete_by_source(self, user_id: str, source_id: str):
+        """
+        Removes all vectors associated with a specific file or video 
+        for a specific user.
+        """
+        try:
+            namespace = f"user_{user_id}"
+
+            # self.index.delete(
+            #     filter={
+            #         "user_id": {"$eq": user_id},
+            #         "source_id": {"$eq": source_id}
+            #     }
+            # )
+            self.index.delete(
+                    namespace=namespace,
+                    filter={"source_id": {"$eq": source_id}}
+                )
+            return True
+        except Exception as e:
+            print(f"Error deleting from Pinecone: {e}")
+            return False
 
 # --- Factory Function for FastAPI Dependency Injection (Requires Index type hint) ---
 

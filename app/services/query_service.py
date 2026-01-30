@@ -7,15 +7,18 @@ class QueryService:
         self.llm_service = llm_service
         self.session_service = session_service
 
-    def retrieve_context(self, question: str, top_k: int=5, video_id: str=None):
+    def retrieve_context(self, user_id: str, question: str, top_k: int=5, source_id: str=None):
         try:
             print(f"Embedding query: {question}")
             query_vector = self.embedding_service.embed_texts([question])[0]
             if not query_vector:
                 raise ValueError("Embedding service returned no data")
 
+            metadata_filter = {"user_id": user_id}
+            if source_id:
+                metadata_filter["source_id"] = source_id
             print(f"retrieving documents:{query_vector}")
-            result = self.vector_db_service.query_documents(query_vector, top_k=top_k, video_id=video_id)
+            result = self.vector_db_service.query_documents(query_vector, top_k=top_k, filter=metadata_filter, namespace=f"user_{user_id}")
             
             print(f"result: {result}")
             return result
@@ -34,25 +37,24 @@ class QueryService:
             print(f"Error in Retrieval Pipeline: {e}")
             return None
         
-    def query(self, question: str, session_id: str, top_k: int=5, video_id: str=None):
-        history = self.session_service.get_history(session_id=session_id, limit=5)
+    def query(self, question: str, user_id: str, session_id: str, top_k: int=5, source_id: str=None):
+        history = self.session_service.get_history(user_id=user_id, session_id=session_id, limit=5)
         
-        chunks = self.retrieve_context(question=question, top_k=top_k, video_id=video_id)
-
-        if not chunks:
-            return {"answer": "No relevant info found.", "sources": []}
+        chunks = self.retrieve_context(user_id=user_id, question=question, top_k=top_k, source_id=source_id)
         
         answer = self.generate_response(question=question, context_chunks=chunks, history=history)
 
         if answer:
             try:
                 self.session_service.add_message(
+                    user_id=user_id,
                     session_id=session_id,
                     role="user",
                     content=question
                 )
                 
                 self.session_service.add_message(
+                    user_id=user_id,
                     session_id=session_id,
                     role="assistant",
                     content=answer
@@ -60,7 +62,7 @@ class QueryService:
             
             except Exception as e:
                 print(f"Error saving chat history: {e}")
-                
+
         return {
             "answer": answer,
             "sources": chunks

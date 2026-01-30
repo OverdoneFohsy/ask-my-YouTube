@@ -7,16 +7,12 @@ class ChunkService:
     
     def get_chunks(
         self,
-        transcript: TranscriptResponse,
+        segments: list[dict],
+        source_id: str,
         max_chars: int = 2000,
         overlap_chars: int = 300
     ):
         try:
-            segments = [{
-                "text": snippet.text,
-                "start": snippet.start,
-                "duration": snippet.duration
-            } for snippet in transcript.snippets]
 
             chunks = chunk_transcript(
                 segments=segments,
@@ -25,14 +21,14 @@ class ChunkService:
             )
 
             chunk_model = [
-                Chunk( video_id = transcript.video_id,
+                Chunk( video_id = source_id,
                 text = chunk["text"],
                 start = chunk["start"],
                 end = chunk["end"]
                 ) for chunk in chunks
             ]
 
-            response = ChunkResponse(video_id = transcript.video_id, chunk = chunk_model)
+            response = ChunkResponse(video_id = source_id, chunk = chunk_model)
 
             return response
 
