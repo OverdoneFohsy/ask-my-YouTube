@@ -1,5 +1,5 @@
-from fastapi import Depends, HTTPException, UploadFile
 import os
+from fastapi import Depends, HTTPException, UploadFile
 # from app.services.chunk import ChunkService
 from app.schemas.ingestion_source import IngestionSource
 from app.services import chunk_service, transcript_service, vector_db, embedding_service
@@ -120,6 +120,7 @@ class IngestionService:
         
         except Exception as e:
             print (f"Error when processing pdf: {e}")
+            raise e
             
         finally:
             # 4. Clean up
@@ -128,54 +129,60 @@ class IngestionService:
 
     # In your _run_ingestion_pipeline
     def _run_ingestion_pipeline(self, segments, user_id: str, source_id: str, source_type: str, display_name: str, max_chars: int, overlap_chars: int):
-            existing = self.db.query(IngestionSource).filter_by(
-                user_id=user_id, 
-                source_id=source_id
-            ).first()
+            try:
+                existing = self.db.query(IngestionSource).filter_by(
+                    user_id=user_id, 
+                    source_id=source_id
+                ).first()
 
-            if existing:
-                return {"status": "Failed", "message": "Source already exist."}
+                if existing:
+                    return {"status": "Failed", "message": "Source already exist."}
+                
+                # 1. Chunking
+
+                chunk_response = self.chunk_service.get_chunks(segments=segments, source_id=source_id, max_chars=max_chars, overlap_chars=overlap_chars)
+                chunks = chunk_response.chunk
+                
+                if not chunks:
+                    return {"status": "success", "total_count": 0, "message": "No chunks generated."}
+
+                # 2. Embedding
+                texts_to_embed = [c.text for c in chunks]
+                vectors = self.embedding_service.embed_texts(texts_to_embed)
+
+                # 3. Metadata & Namespace Preparation
+                documents_to_ingest = []
+                for i, (chunk_model, vector_data) in enumerate(zip(chunks, vectors)):
+                    chunk_dict = chunk_model.model_dump(exclude_none=True)
+                    chunk_id = f"{source_id}_chunk_{i}"
+                    chunk_dict["id"] = chunk_id
+                    chunk_dict["vector"] = vector_data
+                    chunk_dict["metadata"] = {
+                        "user_id": user_id,
+                        "source": source_id,
+                        "source_type": source_type
+                    }
+                    documents_to_ingest.append(chunk_dict)
+
+                # 4. Ingest into Pinecone (Pass the user_id as namespace)
+                pinecone_response = self.vector_db_service.ingest_documents(
+                    documents=documents_to_ingest, 
+                    namespace=f"user_{user_id}"
+                )
+
+                self.register_source(
+                    user_id=user_id,
+                    source_id=source_id,
+                    source_type=source_type,
+                    display_name=display_name
+                )
+
+                return pinecone_response
             
-            # 1. Chunking
-
-            chunk_response = self.chunk_service.get_chunks(segments=segments, source_id=source_id, max_chars=max_chars, overlap_chars=overlap_chars)
-            chunks = chunk_response.chunk
-            
-            if not chunks:
-                return {"status": "success", "total_count": 0, "message": "No chunks generated."}
-
-            # 2. Embedding
-            texts_to_embed = [c.text for c in chunks]
-            vectors = self.embedding_service.embed_texts(texts_to_embed)
-
-            # 3. Metadata & Namespace Preparation
-            documents_to_ingest = []
-            for i, (chunk_model, vector_data) in enumerate(zip(chunks, vectors)):
-                chunk_dict = chunk_model.model_dump(exclude_none=True)
-                chunk_id = f"{source_id}_chunk_{i}"
-                chunk_dict["id"] = chunk_id
-                chunk_dict["vector"] = vector_data
-                chunk_dict["metadata"] = {
-                    "user_id": user_id,
-                    "source": source_id,
-                    "source_type": source_type
-                }
-                documents_to_ingest.append(chunk_dict)
-
-            # 4. Ingest into Pinecone (Pass the user_id as namespace)
-            pinecone_response = self.vector_db_service.ingest_documents(
-                documents=documents_to_ingest, 
-                namespace=f"user_{user_id}"
-            )
-
-            self.register_source(
-                user_id=user_id,
-                source_id=source_id,
-                source_type=source_type,
-                display_name=display_name
-            )
-
-            return pinecone_response
+            except Exception as e:
+                self.db.rollback()
+                print(f"Ingestion failed: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
 
 def get_ingestion_service(
         transcript_service: transcript_service.TranscriptService = Depends(transcript_service.get_transcript_service),
@@ -184,8 +191,4 @@ def get_ingestion_service(
         vector_db_service: vector_db.VectorDBService = Depends(vector_db.get_vector_db_service),
         db: Session = Depends(get_db)
 ):
-    global _ingestion_service_instance
-    if not _ingestion_service_instance:
-        _ingestion_service_instance = IngestionService(transcript_service=transcript_service, chunk_service=chunk_service, embedding_service=embedding_service,vector_db_service=vector_db_service, db=db)
-    
-    return _ingestion_service_instance
+    return IngestionService(transcript_service=transcript_service, chunk_service=chunk_service, embedding_service=embedding_service,vector_db_service=vector_db_service, db=db)
