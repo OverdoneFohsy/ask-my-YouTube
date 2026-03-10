@@ -7,7 +7,7 @@ class QueryService:
         self.llm_service = llm_service
         self.session_service = session_service
 
-    def retrieve_context(self, user_id: str, question: str, top_k: int=5, source_id: str=None):
+    def _retrieve_context(self, user_id: str, question: str, top_k: int=5, source_id: str=None):
         try:
             print(f"Embedding query: {question}")
             query_vector = self.embedding_service.embed_texts([question])[0]
@@ -27,7 +27,7 @@ class QueryService:
             print(f"Error in Retrieval Pipeline: {e}")
             return []
         
-    def generate_response(self, question: str, context_chunks:list, history:list):
+    def _generate_response(self, question: str, context_chunks:list, history:list):
         try:
             response = self.llm_service.generate_response(question=question, context_chunks=context_chunks, history=history)
             
@@ -40,9 +40,9 @@ class QueryService:
     def query(self, question: str, user_id: str, session_id: str, top_k: int=5, source_id: str=None):
         history = self.session_service.get_history(user_id=user_id, session_id=session_id, limit=5)
         
-        chunks = self.retrieve_context(user_id=user_id, question=question, top_k=top_k, source_id=source_id)
+        chunks = self._retrieve_context(user_id=user_id, question=question, top_k=top_k, source_id=source_id)
         
-        answer = self.generate_response(question=question, context_chunks=chunks, history=history)
+        answer = self._generate_response(question=question, context_chunks=chunks, history=history)
 
         if answer:
             try:
