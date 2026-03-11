@@ -9,6 +9,7 @@ class ChatSession(Base):
     id = Column(String, primary_key=True, index=True)
     user_id = Column(String, index=True, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
+    title = Column(String, nullable=True)
 
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
 

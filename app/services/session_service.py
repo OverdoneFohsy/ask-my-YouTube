@@ -30,8 +30,11 @@ class SessionService:
         """Persists a single message to the cloud database."""
         try:
             # Step 1: Ensure session exists
-            self.get_or_create_session(user_id=user_id, session_id = session_id)
+            session = self.get_or_create_session(user_id=user_id, session_id = session_id)
             
+            if not session.title:
+                session.title = (content[:40] + '...') if len(content) > 35 else content
+
             # Step 2: Add message
             message = ChatMessage(user_id=user_id, session_id=session_id, role=role, content=content)
             self.db.add(message)
@@ -46,15 +49,20 @@ class SessionService:
         return self.db.query(ChatMessage)\
             .filter( ChatMessage.user_id == user_id, ChatMessage.session_id == session_id)\
             .order_by(ChatMessage.timestamp.asc())\
-            .limit(limit)\
             .all()
     
-    def delete_session(self, session_id: str):#, user_id: str):
+    def get_sessions(self, user_id: str):
+            return self.db.query(ChatSession).filter(
+                ChatSession.user_id == user_id
+            ).order_by(ChatSession.created_at.desc()).all()
+        
+    
+    def delete_session(self, session_id: str, user_id: str):
         """Wipes a session and all its messages using cascading deletes."""
         try:
             session = self.db.query(ChatSession).filter(
                 ChatSession.id == session_id,
-                #ChatSession.user_id == user_id
+                ChatSession.user_id == user_id
             ).first()
             if session:
                 self.db.delete(session)

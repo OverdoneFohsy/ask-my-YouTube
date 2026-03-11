@@ -42,9 +42,9 @@ class QueryService:
         
         chunks = self._retrieve_context(user_id=user_id, question=question, top_k=top_k, source_id=source_id)
         
-        answer = self._generate_response(question=question, context_chunks=chunks, history=history)
+        response = self._generate_response(question=question, context_chunks=chunks, history=history)
 
-        if answer:
+        if response:
             try:
                 self.session_service.add_message(
                     user_id=user_id,
@@ -57,14 +57,14 @@ class QueryService:
                     user_id=user_id,
                     session_id=session_id,
                     role="assistant",
-                    content=answer
+                    content=response
                 )
             
             except Exception as e:
                 print(f"Error saving chat history: {e}")
 
         return {
-            "answer": answer,
+            "response": response,
             "sources": chunks
         }
         

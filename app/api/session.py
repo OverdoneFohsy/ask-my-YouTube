@@ -16,37 +16,21 @@ router = APIRouter(
 @router.post("/")
 async def chat(
     request: ChatRequest, 
-    source_id: str,
-    top_k: Optional[int] = None,
     session_service: SessionService = Depends(get_session_service),
     query_service: QueryService = Depends(get_query_service),
     user_id = Depends(get_current_user),
 ):
-    # 1. Save the User's message to Supabase immediately
-    session_service.add_message(
-        user_id=user_id,
-        session_id=request.session_id, 
-        role="user", 
-        content=request.message
-    )
-    
-    # 2. Generate Response
     ai_response = query_service.query(
         user_id=user_id,
+        question=request.message,
         session_id=request.session_id,
-        top_k=top_k,
-        source_id=source_id
+        top_k=request.top_k,
+        source_id=request.source_id
     )
     
-    # 3. Save the response to the same session
-    session_service.add_message(
-        user_id=user_id,
-        session_id=request.session_id, 
-        role="assistant", 
-        content=ai_response
-    )
     print("Endpoint completed")
-    return {"response": ai_response}
+    return {"response": ai_response["response"],
+            "sources": ai_response["sources"]}
 
 @router.get("/")
 async def get_sessions(
@@ -73,7 +57,11 @@ def get_chat_history(session_id:str, user_id = Depends(get_current_user), servic
         "message": "History retrieve successfully."}
 
 @router.delete("/{session_id}")
-def clear_session(session_id: str, service: SessionService = Depends(get_session_service)):
+def clear_session(session_id: str, user_id = Depends(get_current_user), service: SessionService = Depends(get_session_service)):
     """Wipe the history for a session."""
-    service.delete_session(session_id=session_id)
+    success = service.delete_session(user_id=user_id, session_id=session_id)
+
+    if not success:
+        raise HTTPException(404, detail="Session not found")
+    
     return {"status": "deleted"}
