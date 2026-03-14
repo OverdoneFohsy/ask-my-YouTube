@@ -48,6 +48,39 @@ class LLMService:
             print(f"Error in generating response: {e}")
             return None
     
+    def generate_title(self, context_chunks:list, message:str):
+        try:
+            context_text = "\n\n".join(c['text'] for c in context_chunks)
+
+            prompt = f"""
+            You are a title generator. You generate a title for a conversation base on the provided message and the fetched context.
+
+            FETCHED CONTEXT (Video Transcript OR PDF):
+            {context_text}
+            
+            INSTRUCTIONS:
+            1. PRIORITIZE the "FETCHED CONTEXT" above.
+            2. If the answer is NOT in the provided context, answer the question base on the message. 
+            3. The title should be 1 sentence maximum.
+
+            MESSAGE:
+            {message}
+            """
+
+            response = self.client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt
+            )
+
+            print(f"response: {response}")
+
+            return response.text
+        
+        except Exception as e:
+            print(f"Error in generating response: {e}")
+            return None
+
+    
 def get_llm_service():
     global _llm_service_instance
     if not _llm_service_instance:

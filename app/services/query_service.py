@@ -36,6 +36,47 @@ class QueryService:
         except Exception as e:
             print(f"Error in Retrieval Pipeline: {e}")
             return None
+    
+    def _generate_title(self, message: str, context_chunks:list):
+        try:
+            response = self.llm_service.generate_title(context_chunks=context_chunks, message=message)
+
+            return response
+
+        except Exception as e:
+            print(f"Error in Retrieval Pipeline: {e}")
+            return None
+        
+    # def _update_session_title(self, user_id: str, session_id: str, question: str, chunks: list):
+    #     """
+    #     Refines the session title using LLM without blocking the main response.
+    #     Reuses chunks already fetched during the main query.
+    #     """
+    #     try:
+
+    #         session = self.session_service.get_or_create_session(user_id=user_id, session_id=session_id)
+            
+    #         # 2. Final check: Only generate if title is empty or the "..." fallback
+    #         if session and (not session.title or "..." in session.title):
+    #             print(f"Background Task: Generating refined title for session {session_id}")
+                
+    #             # 3. Call your LLM title generation method
+    #             refined_title = self._generate_title(message=question, context_chunks=chunks)
+
+    #             if refined_title:
+                    
+    #                 # 4. Use the "Black Magic": Update the attribute and commit
+    #                 session.title = refined_title
+    #                 self.session_service.db.commit()
+    #                 print(f"Background Task: Title successfully updated to '{refined_title}'")
+    #             else:
+    #                 print("Background Task: LLM returned no title, skipping update.")
+                    
+    #     except Exception as e:
+    #         # Important: Rollback the session if anything goes wrong in the background
+    #         if self.session_service.db:
+    #             self.session_service.db.rollback()
+    #         print(f"Error in Background Title Update: {e}")
         
     def query(self, question: str, user_id: str, session_id: str, top_k: int=5, source_id: str=None):
         history = self.session_service.get_history(user_id=user_id, session_id=session_id, limit=5)
@@ -46,7 +87,7 @@ class QueryService:
 
         if response:
             try:
-                self.session_service.add_message(
+                session = self.session_service.add_message(
                     user_id=user_id,
                     session_id=session_id,
                     role="user",
@@ -59,7 +100,13 @@ class QueryService:
                     role="assistant",
                     content=response
                 )
-            
+
+                if session and (not session.title):
+                    generated_title = self._generate_title(question, chunks)
+                    if generated_title:
+                        session.title = generated_title
+                        self.session_service.db.commit()
+                
             except Exception as e:
                 print(f"Error saving chat history: {e}")
 
