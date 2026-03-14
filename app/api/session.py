@@ -65,3 +65,13 @@ def clear_session(session_id: str, user_id = Depends(get_current_user), service:
         raise HTTPException(404, detail="Session not found")
     
     return {"status": "deleted"}
+
+@router.delete("/")
+def clear_session(user_id = Depends(get_current_user), service: SessionService = Depends(get_session_service)):
+    """Wipe the history for a session."""
+    success = service.delete_all_session(user_id=user_id)
+
+    if not success:
+        raise HTTPException(404, detail="Deletion Failed")
+    
+    return {"status": "deleted"}

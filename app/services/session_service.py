@@ -31,14 +31,14 @@ class SessionService:
         try:
             # Step 1: Ensure session exists
             session = self.get_or_create_session(user_id=user_id, session_id = session_id)
-            
-            if not session.title:
-                session.title = (content[:40] + '...') if len(content) > 35 else content
 
             # Step 2: Add message
             message = ChatMessage(user_id=user_id, session_id=session_id, role=role, content=content)
             self.db.add(message)
             self.db.commit()
+
+            return session
+        
         except SQLAlchemyError as e:
             self.db.rollback()
             print(f"Error adding message to session {session_id}: {e}")
@@ -73,6 +73,26 @@ class SessionService:
         except SQLAlchemyError as e:
             self.db.rollback()
             print(f"Error deleting session {session_id}: {e}")
+            raise e
+        
+    def delete_all_session(self, user_id: str):
+        """Wipes all sessions and all their messages using cascading deletes."""
+        try:
+            sessions = self.db.query(ChatSession).filter(
+                ChatSession.user_id == user_id
+            )
+
+            deleted_count = sessions.delete(synchronize_session=False)
+
+            if deleted_count > 0:
+                self.db.commit()
+                return True
+            else:
+                return False
+            
+        except SQLAlchemyError as e:
+            self.db.rollback()
+            print(f"Error deleting sessions: {e}")
             raise e
 
 def get_session_service(db: Session = Depends(get_db)) -> SessionService:
