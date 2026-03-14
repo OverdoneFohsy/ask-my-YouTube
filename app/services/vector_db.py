@@ -75,7 +75,7 @@ class VectorDBService:
 
     def query_documents(self, query_vector: List[float], filter: dict, top_k: int = 5, source_id: str = None, namespace: str = None) -> List[Dict[str, Any]]:
         """
-        Performs a similarity search using the query vector to retrieve relevant chunks (Retrieval step).
+        Performs a similarity search using the query vector to retrieve relevant chunks.
         """
         try:
             results = self.index.query(

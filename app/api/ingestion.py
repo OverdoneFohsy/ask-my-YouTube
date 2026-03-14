@@ -9,7 +9,7 @@ def get_user_sources(
     user_id = Depends(get_current_user),
     ingestion_service = Depends(get_ingestion_service)
 ):
-    # Pass current_user.id so the service knows which namespace to use
+
     response = ingestion_service.get_user_sources(
         user_id=user_id
     )
@@ -34,7 +34,7 @@ async def ingest_pdf_pipeline(
     user_id = Depends(get_current_user),
     ingestion_service = Depends(get_ingestion_service)
 ):
-    # Pass current_user.id so the service knows which namespace to use
+
     response = await ingestion_service.process_pdf(
         file=file, 
         user_id=user_id
