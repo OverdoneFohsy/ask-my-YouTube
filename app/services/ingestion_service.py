@@ -34,34 +34,33 @@ class IngestionService:
         return self.db.query(IngestionSource).filter(IngestionSource.user_id == user_id).all()
 
     def delete_by_source_id(self, user_id: str, source_id: str):
-        # 1. Pinecone Clean-up
-        vector_success = self.vector_db_service.delete_by_source(user_id, source_id)
-        
-        # 2. SQL Clean-up
+        # Delete SQL record first since vector DB does not have the capability to rollback
         source_record = self.db.query(IngestionSource).filter(
             IngestionSource.user_id == user_id,
             IngestionSource.source_id == source_id
         ).first()
-        
-        if source_record:
-            try:
-                self.db.delete(source_record)
-                self.db.commit()
-                sql_sucess = True
-            except Exception:
-                self.db.rollback()
-                sql_sucess = False
 
-        if vector_success and sql_sucess:
-            return {
-                    "status": "success", 
-                    "message": f"Archive wiped. Removed source {source_id} for user_{user_id}."
-                }
-        
-        return {
-            "status": "Error",
-            "message": "Wipe incomplete. Check logs for database or vector sync issues."
-        }
+        print(f"source_record: {source_record}")
+
+        if not source_record:
+            print("Record does not exist")
+            return {"status": "success", "message": "Source already removed."}
+
+        try:
+            self.db.delete(source_record)
+            vector_success = self.vector_db_service.delete_by_source(user_id, source_id)
+            
+            if not vector_success:
+                self.db.rollback()
+                return {"status": "error", "message": "Could not clear AI memory. SQL delete canceled."}
+
+            self.db.commit()
+            print("Deletion successful")
+            return {"status": "success"}
+
+        except Exception as e:
+            self.db.rollback()
+            return {"status": "error", "message": f"Database error: {str(e)}"}
 
     def delete_by_user(self, user_id: str):
         """
@@ -98,6 +97,7 @@ class IngestionService:
     def process_video(self, video_id: str, user_id: str, max_chars: int = 2000, overlap_chars: int = 300):
         transcript = self.transcript_service.get_transcript(video_id=video_id)
         segments = [{"text": s.text, "start": s.start, "duration": s.duration} for s in transcript.snippets]
+
         return self._run_ingestion_pipeline(segments=segments, user_id=user_id, source_id=video_id, display_name=transcript.title,source_type="video", max_chars=max_chars, overlap_chars=overlap_chars)
     
     async def process_pdf(self, file: UploadFile, user_id: str, max_chars: int = 2000, overlap_chars: int = 300):
@@ -169,6 +169,8 @@ class IngestionService:
                     documents=documents_to_ingest, 
                     namespace=f"user_{user_id}"
                 )
+
+
 
                 self.register_source(
                     user_id=user_id,
