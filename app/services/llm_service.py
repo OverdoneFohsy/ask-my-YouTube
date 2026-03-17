@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from google import genai
+import google.genai.errors
 
 _llm_service_instance = None
 
@@ -44,9 +45,15 @@ class LLMService:
 
             return response.text
         
-        except Exception as e:
+        except google.genai.errors.ClientError as e:
             print(f"Error in generating response: {e}")
-            return None
+            raise ValueError("MODEL_QUOTA_EXCEEDED")
+        
+        except Exception as e:
+            print(f"DEBUG: Error type is: {type(e)}") # This tells you the EXACT class to catch
+            print(f"DEBUG: Error message is: {e}")
+            print(f"Error in generating response: {e}")
+            raise e
     
     def generate_title(self, context_chunks:list, message:str):
         try:

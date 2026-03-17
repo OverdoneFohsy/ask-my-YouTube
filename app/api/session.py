@@ -20,18 +20,28 @@ async def chat(
     query_service: QueryService = Depends(get_query_service),
     user_id = Depends(get_current_user),
 ):
-    ai_response = query_service.query(
-        user_id=user_id,
-        question=request.message,
-        session_id=request.session_id,
-        top_k=request.top_k,
-        source_id=request.source_id
-    )
-    
-    print("Endpoint completed")
-    return {"response": ai_response["response"],
-            "sources": ai_response["sources"]}
+    try:
+        ai_response = query_service.query(
+            user_id=user_id,
+            question=request.message,
+            session_id=request.session_id,
+            source_id=request.source_id
+        )
+        
+        print("Endpoint completed")
+        return {"response": ai_response["response"],
+                "sources": ai_response["sources"]}
 
+    except ValueError as e:
+        if str(e) == "GEMINI_QUOTA_EXCEEDED":
+            raise HTTPException(
+                status_code=429,
+                detail="Quota limit reached."
+            )
+        raise e
+
+    
+    
 @router.get("/")
 async def get_sessions(
     service: SessionService = Depends(get_session_service),

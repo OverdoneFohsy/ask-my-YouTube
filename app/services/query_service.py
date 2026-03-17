@@ -1,31 +1,51 @@
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from app.services import vector_db, embedding_service, llm_service, session_service
+from sentence_transformers import CrossEncoder
+
 class QueryService:
     def __init__(self, embedding_service: embedding_service.EmbeddingService, vector_db_service: vector_db.VectorDBService, llm_service:llm_service.LLMService, session_service:session_service.SessionService):
         self.embedding_service = embedding_service
         self.vector_db_service = vector_db_service
         self.llm_service = llm_service
         self.session_service = session_service
+        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
     def _retrieve_context(self, user_id: str, question: str, top_k: int=5, source_id: str=None):
         try:
+            candidate_pool = 100
+
             print(f"Embedding query: {question}")
             query_vector = self.embedding_service.embed_texts([question])[0]
-            if not query_vector:
+            if not query_vector or len(query_vector) == 0:
                 raise ValueError("Embedding service returned no data")
 
-            metadata_filter = {"user_id": user_id}
+            metadata_filter = {}
             if source_id:
                 metadata_filter["source_id"] = source_id
             print(f"retrieving documents:{query_vector}")
-            result = self.vector_db_service.query_documents(query_vector, top_k=top_k, filter=metadata_filter, namespace=f"user_{user_id}")
             
-            print(f"result: {result}")
-            return result
+            initial_result = self.vector_db_service.query_documents(query_vector, top_k=candidate_pool, filter={}, namespace=f"user_{user_id}")
+            print(f"initial_result: {initial_result}")
+
+            pairs = [[question, doc['text']] for doc in initial_result]
+            rerank_scores = self.reranker.predict(pairs)
+
+            for i, doc in enumerate(initial_result):
+                doc['rerank_score'] = float(rerank_scores[i])
+
+            reranked_result = sorted(
+                initial_result,
+                key=lambda x: x['rerank_score'],
+                reverse=True
+            )[:10]
+
+            print(f"reranked_result: {reranked_result}")
+
+            return reranked_result
         
         except Exception as e:
             print(f"Error in Retrieval Pipeline: {e}")
-            return []
+            raise e
         
     def _generate_response(self, question: str, context_chunks:list, history:list):
         try:
@@ -35,7 +55,7 @@ class QueryService:
         
         except Exception as e:
             print(f"Error in Retrieval Pipeline: {e}")
-            return None
+            raise e
     
     def _generate_title(self, message: str, context_chunks:list):
         try:
@@ -45,7 +65,7 @@ class QueryService:
 
         except Exception as e:
             print(f"Error in Retrieval Pipeline: {e}")
-            return None
+            raise e
         
     # def _update_session_title(self, user_id: str, session_id: str, question: str, chunks: list):
     #     """
@@ -107,6 +127,11 @@ class QueryService:
                         session.title = generated_title
                         self.session_service.db.commit()
                 
+            except ValueError as e:
+                if str(e) == "LLM_QUOTA_RECHED":
+                    raise 
+                raise HTTPException(status_code=500, detail=str(e))
+            
             except Exception as e:
                 print(f"Error saving chat history: {e}")
 
