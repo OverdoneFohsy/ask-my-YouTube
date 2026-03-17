@@ -136,7 +136,7 @@ class IngestionService:
                 ).first()
 
                 if existing:
-                    return {"status": "Failed", "message": "Source already exist."}
+                    return {"status": "Failed", "message": "Source already exist!"}
                 
                 # 1. Chunking
 
@@ -144,7 +144,7 @@ class IngestionService:
                 chunks = chunk_response.chunk
                 
                 if not chunks:
-                    return {"status": "success", "total_count": 0, "message": "No chunks generated."}
+                    return {"status": "Failed", "total_count": 0, "message": "No vector chunk is generated from this source!"}
 
                 # 2. Embedding
                 texts_to_embed = [c.text for c in chunks]

@@ -70,7 +70,8 @@ class VectorDBService:
 
         return {
             "status": "success",
-            "total_count": total_count
+            "total_count": total_count,
+            "message": "Source Successfully Ingested!"
         }
 
     def query_documents(self, query_vector: List[float], filter: dict, top_k: int = 5, source_id: str = None, namespace: str = None) -> List[Dict[str, Any]]:
