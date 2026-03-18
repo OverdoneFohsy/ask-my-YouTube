@@ -7,7 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
+
+print("Backend is initialised")
 
 app = FastAPI(
      title="Learner Archive Backend",
