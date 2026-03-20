@@ -1,6 +1,7 @@
+import os
 from fastapi import Depends, HTTPException
 from app.services import vector_db, embedding_service, llm_service, session_service
-from sentence_transformers import CrossEncoder
+from pinecone import Pinecone
 
 class QueryService:
     def __init__(self, embedding_service: embedding_service.EmbeddingService, vector_db_service: vector_db.VectorDBService, llm_service:llm_service.LLMService, session_service:session_service.SessionService):
@@ -8,7 +9,7 @@ class QueryService:
         self.vector_db_service = vector_db_service
         self.llm_service = llm_service
         self.session_service = session_service
-        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        self.pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 
     def _retrieve_context(self, user_id: str, question: str, top_k: int=5, source_id: str=None):
         try:
@@ -26,22 +27,28 @@ class QueryService:
             
             initial_result = self.vector_db_service.query_documents(query_vector, top_k=candidate_pool, filter={}, namespace=f"user_{user_id}")
             print(f"initial_result: {initial_result}")
+            
+            if not initial_result:
+                print("No documents found in vector store.")
+                return []
+            
+            rerank_results = self.pc.inference.rerank(
+                model="bge-reranker-v2-m3",
+                query=question,
+                documents=[doc['text'] for doc in initial_result],
+                top_n=top_k,
+                return_documents=True
+                )
 
-            pairs = [[question, doc['text']] for doc in initial_result]
-            rerank_scores = self.reranker.predict(pairs)
+            # 4. Format results to match original structure
+            final_results = []
+            for res in rerank_results.data:
+                # Reconstruct the doc with its new score
+                original_doc = next(d for d in initial_result if d['text'] == res.document['text'])
+                original_doc['rerank_score'] = res.score
+                final_results.append(original_doc)
 
-            for i, doc in enumerate(initial_result):
-                doc['rerank_score'] = float(rerank_scores[i])
-
-            reranked_result = sorted(
-                initial_result,
-                key=lambda x: x['rerank_score'],
-                reverse=True
-            )[:10]
-
-            print(f"reranked_result: {reranked_result}")
-
-            return reranked_result
+            return final_results
         
         except Exception as e:
             print(f"Error in Retrieval Pipeline: {e}")
@@ -66,37 +73,6 @@ class QueryService:
         except Exception as e:
             print(f"Error in Retrieval Pipeline: {e}")
             raise e
-        
-    # def _update_session_title(self, user_id: str, session_id: str, question: str, chunks: list):
-    #     """
-    #     Refines the session title using LLM without blocking the main response.
-    #     Reuses chunks already fetched during the main query.
-    #     """
-    #     try:
-
-    #         session = self.session_service.get_or_create_session(user_id=user_id, session_id=session_id)
-            
-    #         # 2. Final check: Only generate if title is empty or the "..." fallback
-    #         if session and (not session.title or "..." in session.title):
-    #             print(f"Background Task: Generating refined title for session {session_id}")
-                
-    #             # 3. Call your LLM title generation method
-    #             refined_title = self._generate_title(message=question, context_chunks=chunks)
-
-    #             if refined_title:
-                    
-    #                 # 4. Use the "Black Magic": Update the attribute and commit
-    #                 session.title = refined_title
-    #                 self.session_service.db.commit()
-    #                 print(f"Background Task: Title successfully updated to '{refined_title}'")
-    #             else:
-    #                 print("Background Task: LLM returned no title, skipping update.")
-                    
-    #     except Exception as e:
-    #         # Important: Rollback the session if anything goes wrong in the background
-    #         if self.session_service.db:
-    #             self.session_service.db.rollback()
-    #         print(f"Error in Background Title Update: {e}")
         
     def query(self, question: str, user_id: str, session_id: str, top_k: int=5, source_id: str=None):
         history = self.session_service.get_history(user_id=user_id, session_id=session_id, limit=5)

@@ -14,17 +14,41 @@
 #     return embeddings.tolist()
 
 import os
+import time
 from typing import List
 from google import genai
 
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 def embed_texts(texts: List[str]) -> List[List[float]]:
-    response = client.models.embed_content(
-        model="gemini-embedding-001",
-        contents=texts,
-        config={"output_dimensionality": 384}
-    )
+    """
+    Embeds text using Google's gemini-embedding-001 model.
+    Includes batching to prevent Render Out-of-Memory crashes.
+    """
+    all_embeddings = []
+    batch_size = 100
     
-    embeddings = [item.values for item in response.embeddings]
-    return embeddings
+    try:
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            
+            response = client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=batch,
+                config={
+                    "output_dimensionality": 384  # Matches your Pinecone index
+                }
+            )
+            
+            # Extract vectors and add to our main list
+            batch_vectors = [item.values for item in response.embeddings]
+            all_embeddings.extend(batch_vectors)
+            
+            # Small breather for Render's CPU/RAM
+            time.sleep(0.2) 
+            
+        return all_embeddings
+
+    except Exception as e:
+        print(f"Error during Google Embedding: {e}")
+        raise e
